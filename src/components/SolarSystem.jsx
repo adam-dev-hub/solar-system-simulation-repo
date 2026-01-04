@@ -1,4 +1,4 @@
-import { useRef, useMemo, useState, useEffect, Suspense } from 'react'
+import React, { useRef, useMemo, useState, useEffect, Suspense } from 'react'
 import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import { OrbitControls, Stars, Environment, Loader, Preload } from '@react-three/drei'
 import * as THREE from 'three'
@@ -212,7 +212,7 @@ function Scene({ timeRef, isPaused, timeSpeed, cameraMode, setCameraTarget }) {
         currentTarget.lerp(target, 0.05)
         
         const camera = state.camera
-        const targetDistance = 8
+        const targetDistance = 15
         
         const direction = new THREE.Vector3()
         direction.subVectors(camera.position, currentTarget).normalize()
@@ -255,6 +255,8 @@ function Scene({ timeRef, isPaused, timeSpeed, cameraMode, setCameraTarget }) {
         maxDistance={160}
         enableDamping
         dampingFactor={0.06}
+        enableZoom={true}
+        enablePan={true}
         touches={{
           ONE: THREE.TOUCH.ROTATE,
           TWO: THREE.TOUCH.DOLLY_PAN
@@ -276,11 +278,11 @@ const styles = `
 
   html, body {
     overscroll-behavior: none;
-    touch-action: none;
+    touch-action: pan-x pan-y pinch-zoom;
   }
 
   canvas {
-    touch-action: none;
+    touch-action: pan-x pan-y pinch-zoom;
   }
 
   :root {
@@ -540,7 +542,10 @@ const styles = `
   }
 
   @media (max-width: 768px) {
-    .ui-container { padding: 16px; gap: 12px; }
+    .ui-container { 
+      padding: 12px; 
+      gap: 10px; 
+    }
     
     .title-group h1 { font-size: 18px; }
     .title-group p { font-size: 11px; }
@@ -550,13 +555,46 @@ const styles = `
     }
 
     .controls-bar {
-      flex-wrap: wrap;
-      padding: 12px;
+      position: fixed;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      margin: 0;
+      padding: 12px 16px;
       gap: 12px;
+      max-width: none;
+      width: auto;
     }
     
-    .slider-group { width: 100%; order: 1; }
-    .btn-primary, .btn-secondary { flex: 1; order: 2; }
+    .slider-group { 
+      width: 100%; 
+      min-width: 0;
+    }
+    
+    .btn-primary, .btn-secondary { 
+      padding: 10px 14px;
+      font-size: 11px;
+      min-width: 70px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .controls-bar {
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      gap: 10px;
+    }
+    
+    .slider-group { 
+      order: 1;
+      width: 100%;
+    }
+    
+    .btn-primary, .btn-secondary { 
+      order: 2;
+      flex: 1;
+      min-width: 0;
+    }
   }
 `
 
@@ -710,7 +748,7 @@ export default function SolarSystem() {
   const [cameraTarget, setCameraTarget] = useState(null)
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#050505', position: 'relative', touchAction: 'none', overflow: 'hidden' }}>
+    <div style={{ width: '100vw', height: '100vh', background: '#050505', position: 'relative', touchAction: 'pan-x pan-y pinch-zoom', overflow: 'hidden' }}>
       <Canvas
         shadows
         camera={{ position: [0, 40, 60], fov: 45 }}
