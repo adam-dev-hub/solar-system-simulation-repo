@@ -1,234 +1,378 @@
-'use client'
+import React, { useEffect, useRef, useState } from 'react';
+import { Play, Pause, RotateCcw, Zap, ZapOff } from 'lucide-react';
 
-import { useRef, useMemo } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, Stars, Html } from '@react-three/drei'
-import * as THREE from 'three'
-
-// Physics constants (from your Python code)
-const G = 1.0
-const Ms = 1000.0 // Sun mass
-const Mt = 10.0   // Earth mass
-const Ml = 1.0    // Moon mass
-
-// Celestial body component
-function CelestialBody({ position, color, size, emissive, name, children }) {
-  return (
-    <mesh position={position}>
-      <sphereGeometry args={[size, 32, 32]} />
-      <meshStandardMaterial 
-        color={color} 
-        emissive={emissive || color} 
-        emissiveIntensity={emissive ? 0.5 : 0.1} 
-      />
-      {name && (
-        <Html distanceFactor={15}>
-          <div className="text-white text-xs bg-black/50 px-2 py-1 rounded whitespace-nowrap">
-            {name}
-          </div>
-        </Html>
-      )}
-      {children}
-    </mesh>
-  )
-}
-
-// Orbiting body with physics
-function OrbitingBody({ 
-  parentPosition = [0, 0, 0], 
-  distance, 
-  speed, 
-  color, 
-  size, 
-  name,
-  children 
-}) {
-  const ref = useRef()
-  const initialAngle = useMemo(() => Math.random() * Math.PI * 2, [])
-
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime() * speed + initialAngle
-    ref.current.position. x = parentPosition[0] + Math.cos(t) * distance
-    ref.current.position.z = parentPosition[2] + Math.sin(t) * distance
-  })
-
-  return (
-    <mesh ref={ref}>
-      <sphereGeometry args={[size, 32, 32]} />
-      <meshStandardMaterial color={color} />
-      {name && (
-        <Html distanceFactor={15}>
-          <div className="text-white text-xs bg-black/50 px-2 py-1 rounded whitespace-nowrap">
-            {name}
-          </div>
-        </Html>
-      )}
-      {children}
-    </mesh>
-  )
-}
-
-// Orbit ring visualization
-function OrbitRing({ radius, color = 'white' }) {
-  const points = useMemo(() => {
-    const pts = []
-    for (let i = 0; i <= 64; i++) {
-      const angle = (i / 64) * Math.PI * 2
-      pts.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius))
-    }
-    return pts
-  }, [radius])
-
-  return (
-    <line>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={points.length}
-          array={new Float32Array(points. flatMap(p => [p.x, p.y, p. z]))}
-          itemSize={3}
-        />
-      </bufferGeometry>
-      <lineBasicMaterial color={color} opacity={0.3} transparent />
-    </line>
-  )
-}
-
-// Earth system with Moon and Satellite
-function EarthSystem() {
-  const earthRef = useRef()
-  const moonRef = useRef()
-  const satelliteRef = useRef()
+const SolarSystemSimulation = () => {
+  const canvasRef = useRef(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [showTrails, setShowTrails] = useState(true);
+  const animationRef = useRef(null);
   
-  const earthDistance = 12
-  const moonDistance = 1.5
-  const satelliteDistance = 0.8
+  const initializeState = () => ({
+    sun: { x: 0, y: 0, vx: 0, vy: 0, mass: 1000 },
+    earth: { x: 200, y: 0, vx: 0, vy: Math.sqrt(1000 * 0.1 / 200), mass: 1 },
+    moon: { x: 200, y: 30, vx: -Math.sqrt(1 * 0.1 / 30), vy: Math.sqrt(1000 * 0.1 / 200), mass: 0.012 },
+    satellite: { x: 200, y: 8, vx: -Math.sqrt(1 * 0.1 / 8), vy: Math.sqrt(1000 * 0.1 / 200), mass: 0.00001 },
+    trails: {
+      earth: [],
+      moon: [],
+      satellite: []
+    },
+    time: 0
+  });
 
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime()
+  const stateRef = useRef(initializeState());
+
+  const G = 0.1;
+  const dt = 0.016; // Smaller timestep for stability
+  const trailLength = 400;
+
+  const calculateAcceleration = (body, others) => {
+    let ax = 0;
+    let ay = 0;
+
+    others.forEach(other => {
+      const dx = other.x - body.x;
+      const dy = other.y - body.y;
+      const distSq = dx * dx + dy * dy;
+      const dist = Math.sqrt(distSq);
+      
+      if (dist < 0.1) return;
+      
+      const force = G * other.mass / (distSq * dist); // acceleration = G*M/r^2
+      ax += force * dx;
+      ay += force * dy;
+    });
+
+    return { ax, ay };
+  };
+
+  const updatePhysics = () => {
+    const state = stateRef.current;
+    const { sun, earth, moon, satellite } = state;
+
+    // Store old accelerations for Verlet integration
+    const bodies = { earth, moon, satellite };
+    const accelerations = {};
+
+    // Calculate accelerations for each body
+    accelerations.earth = calculateAcceleration(earth, [sun, moon]);
+    accelerations.moon = calculateAcceleration(moon, [sun, earth]);
+    accelerations.satellite = calculateAcceleration(satellite, [sun, earth, moon]);
+
+    // Update positions and velocities using leapfrog integration
+    Object.keys(bodies).forEach(bodyName => {
+      const body = bodies[bodyName];
+      const acc = accelerations[bodyName];
+      
+      // Update velocity (half step)
+      body.vx += acc.ax * dt * 0.5;
+      body.vy += acc.ay * dt * 0.5;
+      
+      // Update position
+      body.x += body.vx * dt;
+      body.y += body.vy * dt;
+    });
+
+    // Recalculate accelerations at new positions
+    accelerations.earth = calculateAcceleration(earth, [sun, moon]);
+    accelerations.moon = calculateAcceleration(moon, [sun, earth]);
+    accelerations.satellite = calculateAcceleration(satellite, [sun, earth, moon]);
+
+    // Update velocity (second half step)
+    Object.keys(bodies).forEach(bodyName => {
+      const body = bodies[bodyName];
+      const acc = accelerations[bodyName];
+      
+      body.vx += acc.ax * dt * 0.5;
+      body.vy += acc.ay * dt * 0.5;
+    });
+
+    // Update trails
+    if (showTrails) {
+      state.trails.earth.push({ x: earth.x, y: earth.y });
+      state.trails.moon.push({ x: moon.x, y: moon.y });
+      state.trails.satellite.push({ x: satellite.x, y: satellite.y });
+      
+      if (state.trails.earth.length > trailLength) state.trails.earth.shift();
+      if (state.trails.moon.length > trailLength) state.trails.moon.shift();
+      if (state.trails.satellite.length > trailLength) state.trails.satellite.shift();
+    }
+
+    state.time += dt;
+  };
+
+  const drawBody = (ctx, body, color, radius, glow = false) => {
+    const centerX = ctx.canvas.width / 2;
+    const centerY = ctx.canvas.height / 2;
+    const x = centerX + body.x * 1.8;
+    const y = centerY + body.y * 1.8;
+
+    if (glow) {
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius * 3);
+      gradient.addColorStop(0, color + '80');
+      gradient.addColorStop(0.5, color + '40');
+      gradient.addColorStop(1, color + '00');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Add highlight
+    const hlGradient = ctx.createRadialGradient(
+      x - radius/3, y - radius/3, 0,
+      x, y, radius
+    );
+    hlGradient.addColorStop(0, 'rgba(255,255,255,0.8)');
+    hlGradient.addColorStop(0.3, 'rgba(255,255,255,0.3)');
+    hlGradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = hlGradient;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  const drawTrail = (ctx, trail, color, width = 1) => {
+    if (trail.length < 2) return;
     
-    // Earth orbits Sun
-    const earthSpeed = 0.2
-    earthRef.current.position.x = Math. cos(t * earthSpeed) * earthDistance
-    earthRef. current.position.z = Math.sin(t * earthSpeed) * earthDistance
+    const centerX = ctx.canvas.width / 2;
+    const centerY = ctx.canvas.height / 2;
+
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     
-    // Moon orbits Earth
-    const moonSpeed = 1.5
-    moonRef. current.position.x = earthRef.current.position.x + Math. cos(t * moonSpeed) * moonDistance
-    moonRef. current.position.z = earthRef.current.position.z + Math.sin(t * moonSpeed) * moonDistance
+    for (let i = 1; i < trail.length; i++) {
+      const alpha = (i / trail.length) * 0.7;
+      ctx.strokeStyle = color.replace('1)', `${alpha})`);
+      
+      ctx.beginPath();
+      ctx.moveTo(
+        centerX + trail[i-1].x * 1.8,
+        centerY + trail[i-1].y * 1.8
+      );
+      ctx.lineTo(
+        centerX + trail[i].x * 1.8,
+        centerY + trail[i].y * 1.8
+      );
+      ctx.stroke();
+    }
+  };
+
+  const draw = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     
-    // Satellite orbits Earth (faster, closer)
-    const satSpeed = 4
-    satelliteRef.current.position. x = earthRef. current.position.x + Math.cos(t * satSpeed) * satelliteDistance
-    satelliteRef. current.position.z = earthRef.current.position.z + Math.sin(t * satSpeed) * satelliteDistance
-    satelliteRef.current. position.y = Math.sin(t * satSpeed * 0.5) * 0.3 // slight inclination
-  })
+    const ctx = canvas.getContext('2d');
+    const state = stateRef.current;
+
+    // Clear with space background
+    ctx.fillStyle = '#050814';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw stars background
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    for (let i = 0; i < 150; i++) {
+      const x = (i * 73 + state.time * 2) % canvas.width;
+      const y = (i * 97) % canvas.height;
+      const size = ((i * 13) % 3) * 0.4 + 0.5;
+      ctx.fillRect(x, y, size, size);
+    }
+
+    // Draw orbit guides
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    
+    ctx.strokeStyle = 'rgba(100, 120, 180, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    
+    // Earth orbit around Sun
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 200 * 1.8, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Moon orbit around Earth
+    ctx.beginPath();
+    ctx.arc(centerX + state.earth.x * 1.8, centerY + state.earth.y * 1.8, 30 * 1.8, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Satellite orbit around Earth
+    ctx.beginPath();
+    ctx.arc(centerX + state.earth.x * 1.8, centerY + state.earth.y * 1.8, 8 * 1.8, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    ctx.setLineDash([]);
+
+    // Draw trails
+    if (showTrails) {
+      drawTrail(ctx, state.trails.earth, 'rgba(74, 144, 226, 1)', 2.5);
+      drawTrail(ctx, state.trails.moon, 'rgba(255, 165, 0, 1)', 1.8);
+      drawTrail(ctx, state.trails.satellite, 'rgba(0, 255, 136, 1)', 1.5);
+    }
+
+    // Draw bodies
+    drawBody(ctx, state.sun, '#FDB813', 20, true);
+    drawBody(ctx, state.earth, '#4A90E2', 10);
+    drawBody(ctx, state.moon, '#E8E8E8', 5);
+    drawBody(ctx, state.satellite, '#00FF88', 3);
+
+    // Draw connection lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 4]);
+    
+    // Earth to Moon
+    ctx.beginPath();
+    ctx.moveTo(centerX + state.earth.x * 1.8, centerY + state.earth.y * 1.8);
+    ctx.lineTo(centerX + state.moon.x * 1.8, centerY + state.moon.y * 1.8);
+    ctx.stroke();
+    
+    // Earth to Satellite
+    ctx.beginPath();
+    ctx.moveTo(centerX + state.earth.x * 1.8, centerY + state.earth.y * 1.8);
+    ctx.lineTo(centerX + state.satellite.x * 1.8, centerY + state.satellite.y * 1.8);
+    ctx.stroke();
+    
+    ctx.setLineDash([]);
+
+    // Draw info panel
+    ctx.fillStyle = 'rgba(20, 25, 40, 0.85)';
+    ctx.fillRect(10, 10, 220, 120);
+    ctx.strokeStyle = 'rgba(100, 120, 180, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(10, 10, 220, 120);
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText('TELEMETRY', 20, 30);
+    
+    ctx.font = '13px monospace';
+    ctx.fillText(`Time: ${(state.time * 2).toFixed(1)}d`, 20, 50);
+    
+    const earthDist = Math.sqrt(state.earth.x ** 2 + state.earth.y ** 2);
+    const moonDist = Math.sqrt(
+      (state.moon.x - state.earth.x) ** 2 + 
+      (state.moon.y - state.earth.y) ** 2
+    );
+    const satDist = Math.sqrt(
+      (state.satellite.x - state.earth.x) ** 2 + 
+      (state.satellite.y - state.earth.y) ** 2
+    );
+
+    ctx.fillStyle = '#4A90E2';
+    ctx.fillText(`Earth: ${earthDist.toFixed(1)} AU`, 20, 70);
+    ctx.fillStyle = '#FFA500';
+    ctx.fillText(`Moon: ${moonDist.toFixed(1)} LD`, 20, 90);
+    ctx.fillStyle = '#00FF88';
+    ctx.fillText(`Sat: ${satDist.toFixed(2)} LD`, 20, 110);
+  };
+
+  const animate = () => {
+    if (!isPaused) {
+      // Multiple physics steps for smoother orbits
+      for (let i = 0; i < 2; i++) {
+        updatePhysics();
+      }
+    }
+    draw();
+    animationRef.current = requestAnimationFrame(animate);
+  };
+
+  const reset = () => {
+    stateRef.current = initializeState();
+  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    canvas.width = 900;
+    canvas.height = 900;
+
+    animate();
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [isPaused, showTrails]);
 
   return (
-    <>
-      {/* Earth */}
-      <mesh ref={earthRef}>
-        <sphereGeometry args={[0.5, 32, 32]} />
-        <meshStandardMaterial color="#4a90d9" />
-        <Html distanceFactor={15}>
-          <div className="text-white text-xs bg-blue-500/70 px-2 py-1 rounded">🌍 Earth</div>
-        </Html>
-      </mesh>
-      
-      {/* Moon */}
-      <mesh ref={moonRef}>
-        <sphereGeometry args={[0.15, 32, 32]} />
-        <meshStandardMaterial color="#888888" />
-        <Html distanceFactor={15}>
-          <div className="text-white text-xs bg-gray-500/70 px-2 py-1 rounded">🌙 Moon</div>
-        </Html>
-      </mesh>
-      
-      {/* Satellite */}
-      <mesh ref={satelliteRef}>
-        <boxGeometry args={[0.1, 0.05, 0.1]} />
-        <meshStandardMaterial color="#ff4444" emissive="#ff0000" emissiveIntensity={0.5} />
-        <Html distanceFactor={15}>
-          <div className="text-white text-xs bg-red-500/70 px-2 py-1 rounded">🛰️ Satellite</div>
-        </Html>
-      </mesh>
-      
-      {/* Earth orbit ring */}
-      <OrbitRing radius={earthDistance} color="#4a90d9" />
-    </>
-  )
-}
-
-// Main scene
-function Scene() {
-  return (
-    <>
-      {/* Lighting */}
-      <ambientLight intensity={0.1} />
-      <pointLight position={[0, 0, 0]} intensity={2} color="#fff5e0" />
-      
-      {/* Stars background */}
-      <Stars radius={100} depth={50} count={5000} factor={4} fade speed={1} />
-      
-      {/* Sun */}
-      <mesh position={[0, 0, 0]}>
-        <sphereGeometry args={[2, 32, 32]} />
-        <meshBasicMaterial color="#ffd700" />
-        <Html distanceFactor={15}>
-          <div className="text-yellow-300 text-sm font-bold bg-yellow-500/30 px-2 py-1 rounded">☀️ Sun</div>
-        </Html>
-      </mesh>
-      
-      {/* Sun glow */}
-      <mesh position={[0, 0, 0]}>
-        <sphereGeometry args={[2.5, 32, 32]} />
-        <meshBasicMaterial color="#ff8c00" transparent opacity={0.2} />
-      </mesh>
-      
-      {/* Earth System (Earth + Moon + Satellite) */}
-      <EarthSystem />
-      
-      {/* Other planets */}
-      <OrbitingBody distance={6} speed={0.4} color="#d4a574" size={0.3} name="🪨 Mercury" />
-      <OrbitRing radius={6} color="#d4a574" />
-      
-      <OrbitingBody distance={9} speed={0.3} color="#e6c87a" size={0.45} name="🌕 Venus" />
-      <OrbitRing radius={9} color="#e6c87a" />
-      
-      <OrbitingBody distance={18} speed={0.1} color="#c1440e" size={0.4} name="🔴 Mars" />
-      <OrbitRing radius={18} color="#c1440e" />
-      
-      {/* Camera controls */}
-      <OrbitControls 
-        enablePan={true} 
-        enableZoom={true} 
-        minDistance={5} 
-        maxDistance={80}
-        autoRotate
-        autoRotateSpeed={0.3}
-      />
-    </>
-  )
-}
-
-// Main component
-export default function SolarSystem() {
-  return (
-    <div className="w-full h-screen bg-black">
-      <Canvas camera={{ position: [0, 20, 30], fov: 60 }}>
-        <Scene />
-      </Canvas>
-      
-      {/* UI Overlay */}
-      <div className="absolute top-4 left-4 text-white">
-        <h1 className="text-2xl font-bold mb-2">🌌 Solar System Simulator</h1>
-        <p className="text-sm text-gray-300">Drag to rotate • Scroll to zoom</p>
+    <div className="flex flex-col items-center gap-4 p-6 bg-gray-900 min-h-screen">
+      <div className="text-center mb-2">
+        <h1 className="text-3xl font-bold text-white mb-2">
+          🌍 Solar System Simulation
+        </h1>
+        <p className="text-gray-400">
+          Stable orbital mechanics • Sun-Earth-Moon-Satellite system
+        </p>
       </div>
-      
-      <div className="absolute bottom-4 left-4 text-white text-xs bg-black/50 p-3 rounded">
-        <p>☀️ Sun • 🌍 Earth • 🌙 Moon • 🛰️ Satellite</p>
-        <p className="text-gray-400 mt-1">Physics: Newton&apos;s Law of Gravitation</p>
+
+      <canvas
+        ref={canvasRef}
+        className="border-2 border-gray-700 rounded-lg shadow-2xl"
+        style={{ background: '#050814' }}
+      />
+
+      <div className="flex gap-3">
+        <button
+          onClick={() => setIsPaused(!isPaused)}
+          className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-semibold"
+        >
+          {isPaused ? <Play size={20} /> : <Pause size={20} />}
+          {isPaused ? 'Play' : 'Pause'}
+        </button>
+        
+        <button
+          onClick={reset}
+          className="flex items-center gap-2 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors font-semibold"
+        >
+          <RotateCcw size={20} />
+          Reset
+        </button>
+
+        <button
+          onClick={() => setShowTrails(!showTrails)}
+          className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-semibold"
+        >
+          {showTrails ? <Zap size={20} /> : <ZapOff size={20} />}
+          Trails: {showTrails ? 'On' : 'Off'}
+        </button>
+      </div>
+
+      <div className="bg-gray-800 p-5 rounded-lg text-gray-300 max-w-2xl border border-gray-700">
+        <h3 className="font-bold text-white mb-3 text-lg">System Info:</h3>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-full bg-yellow-500 shadow-lg"></div>
+            <span><strong>Sun</strong> - Central star</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-full bg-blue-500 shadow-lg"></div>
+            <span><strong>Earth</strong> - Orbits Sun</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-full bg-gray-300 shadow-lg"></div>
+            <span><strong>Moon</strong> - Orbits Earth</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-full bg-green-400 shadow-lg"></div>
+            <span><strong>Satellite</strong> - Low Earth orbit</span>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-gray-400 italic">
+          Using N-body gravitational physics with leapfrog integration
+        </p>
       </div>
     </div>
-  )
-}
+  );
+};
+
+export default SolarSystemSimulation;

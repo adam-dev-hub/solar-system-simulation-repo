@@ -1,11 +1,14 @@
-'user client'
-import dynamic from 'next/dynamic'
+import './globals.css'
 
-const SolarSystem = dynamic(
-  () => import('@/components/SolarSystem'),
-  { ssr: false }
-)
+export const metadata = {
+  title: 'Solar System Simulator',
+  description: '3D Solar System with Earth, Moon and Satellite orbits',
+}
 
-export default function Home() {
-  return <SolarSystem />
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <body className="bg-black">{children}</body>
+    </html>
+  )
 }
