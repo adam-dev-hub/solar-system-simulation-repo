@@ -255,6 +255,15 @@ function Scene({ timeRef, isPaused, timeSpeed, cameraMode, setCameraTarget }) {
         maxDistance={160}
         enableDamping
         dampingFactor={0.06}
+        touches={{
+          ONE: THREE.TOUCH.ROTATE,
+          TWO: THREE.TOUCH.DOLLY_PAN
+        }}
+        mouseButtons={{
+          LEFT: THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN
+        }}
       />
     </>
   )
@@ -264,6 +273,15 @@ const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+
+  canvas {
+    touch-action: none;
+  }
 
   :root {
     --glass-bg: rgba(15, 15, 20, 0.75);
@@ -692,7 +710,7 @@ export default function SolarSystem() {
   const [cameraTarget, setCameraTarget] = useState(null)
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#050505', position: 'relative' }}>
+    <div style={{ width: '100vw', height: '100vh', background: '#050505', position: 'relative', touchAction: 'none', overflow: 'hidden' }}>
       <Canvas
         shadows
         camera={{ position: [0, 40, 60], fov: 45 }}
