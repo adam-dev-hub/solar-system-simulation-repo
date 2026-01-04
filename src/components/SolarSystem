@@ -1,0 +1,234 @@
+'use client'
+
+import { useRef, useMemo } from 'react'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { OrbitControls, Stars, Html } from '@react-three/drei'
+import * as THREE from 'three'
+
+// Physics constants (from your Python code)
+const G = 1.0
+const Ms = 1000.0 // Sun mass
+const Mt = 10.0   // Earth mass
+const Ml = 1.0    // Moon mass
+
+// Celestial body component
+function CelestialBody({ position, color, size, emissive, name, children }) {
+  return (
+    <mesh position={position}>
+      <sphereGeometry args={[size, 32, 32]} />
+      <meshStandardMaterial 
+        color={color} 
+        emissive={emissive || color} 
+        emissiveIntensity={emissive ? 0.5 : 0.1} 
+      />
+      {name && (
+        <Html distanceFactor={15}>
+          <div className="text-white text-xs bg-black/50 px-2 py-1 rounded whitespace-nowrap">
+            {name}
+          </div>
+        </Html>
+      )}
+      {children}
+    </mesh>
+  )
+}
+
+// Orbiting body with physics
+function OrbitingBody({ 
+  parentPosition = [0, 0, 0], 
+  distance, 
+  speed, 
+  color, 
+  size, 
+  name,
+  children 
+}) {
+  const ref = useRef()
+  const initialAngle = useMemo(() => Math.random() * Math.PI * 2, [])
+
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime() * speed + initialAngle
+    ref.current.position. x = parentPosition[0] + Math.cos(t) * distance
+    ref.current.position.z = parentPosition[2] + Math.sin(t) * distance
+  })
+
+  return (
+    <mesh ref={ref}>
+      <sphereGeometry args={[size, 32, 32]} />
+      <meshStandardMaterial color={color} />
+      {name && (
+        <Html distanceFactor={15}>
+          <div className="text-white text-xs bg-black/50 px-2 py-1 rounded whitespace-nowrap">
+            {name}
+          </div>
+        </Html>
+      )}
+      {children}
+    </mesh>
+  )
+}
+
+// Orbit ring visualization
+function OrbitRing({ radius, color = 'white' }) {
+  const points = useMemo(() => {
+    const pts = []
+    for (let i = 0; i <= 64; i++) {
+      const angle = (i / 64) * Math.PI * 2
+      pts.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius))
+    }
+    return pts
+  }, [radius])
+
+  return (
+    <line>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          count={points.length}
+          array={new Float32Array(points. flatMap(p => [p.x, p.y, p. z]))}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <lineBasicMaterial color={color} opacity={0.3} transparent />
+    </line>
+  )
+}
+
+// Earth system with Moon and Satellite
+function EarthSystem() {
+  const earthRef = useRef()
+  const moonRef = useRef()
+  const satelliteRef = useRef()
+  
+  const earthDistance = 12
+  const moonDistance = 1.5
+  const satelliteDistance = 0.8
+
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime()
+    
+    // Earth orbits Sun
+    const earthSpeed = 0.2
+    earthRef.current.position.x = Math. cos(t * earthSpeed) * earthDistance
+    earthRef. current.position.z = Math.sin(t * earthSpeed) * earthDistance
+    
+    // Moon orbits Earth
+    const moonSpeed = 1.5
+    moonRef. current.position.x = earthRef.current.position.x + Math. cos(t * moonSpeed) * moonDistance
+    moonRef. current.position.z = earthRef.current.position.z + Math.sin(t * moonSpeed) * moonDistance
+    
+    // Satellite orbits Earth (faster, closer)
+    const satSpeed = 4
+    satelliteRef.current.position. x = earthRef. current.position.x + Math.cos(t * satSpeed) * satelliteDistance
+    satelliteRef. current.position.z = earthRef.current.position.z + Math.sin(t * satSpeed) * satelliteDistance
+    satelliteRef.current. position.y = Math.sin(t * satSpeed * 0.5) * 0.3 // slight inclination
+  })
+
+  return (
+    <>
+      {/* Earth */}
+      <mesh ref={earthRef}>
+        <sphereGeometry args={[0.5, 32, 32]} />
+        <meshStandardMaterial color="#4a90d9" />
+        <Html distanceFactor={15}>
+          <div className="text-white text-xs bg-blue-500/70 px-2 py-1 rounded">🌍 Earth</div>
+        </Html>
+      </mesh>
+      
+      {/* Moon */}
+      <mesh ref={moonRef}>
+        <sphereGeometry args={[0.15, 32, 32]} />
+        <meshStandardMaterial color="#888888" />
+        <Html distanceFactor={15}>
+          <div className="text-white text-xs bg-gray-500/70 px-2 py-1 rounded">🌙 Moon</div>
+        </Html>
+      </mesh>
+      
+      {/* Satellite */}
+      <mesh ref={satelliteRef}>
+        <boxGeometry args={[0.1, 0.05, 0.1]} />
+        <meshStandardMaterial color="#ff4444" emissive="#ff0000" emissiveIntensity={0.5} />
+        <Html distanceFactor={15}>
+          <div className="text-white text-xs bg-red-500/70 px-2 py-1 rounded">🛰️ Satellite</div>
+        </Html>
+      </mesh>
+      
+      {/* Earth orbit ring */}
+      <OrbitRing radius={earthDistance} color="#4a90d9" />
+    </>
+  )
+}
+
+// Main scene
+function Scene() {
+  return (
+    <>
+      {/* Lighting */}
+      <ambientLight intensity={0.1} />
+      <pointLight position={[0, 0, 0]} intensity={2} color="#fff5e0" />
+      
+      {/* Stars background */}
+      <Stars radius={100} depth={50} count={5000} factor={4} fade speed={1} />
+      
+      {/* Sun */}
+      <mesh position={[0, 0, 0]}>
+        <sphereGeometry args={[2, 32, 32]} />
+        <meshBasicMaterial color="#ffd700" />
+        <Html distanceFactor={15}>
+          <div className="text-yellow-300 text-sm font-bold bg-yellow-500/30 px-2 py-1 rounded">☀️ Sun</div>
+        </Html>
+      </mesh>
+      
+      {/* Sun glow */}
+      <mesh position={[0, 0, 0]}>
+        <sphereGeometry args={[2.5, 32, 32]} />
+        <meshBasicMaterial color="#ff8c00" transparent opacity={0.2} />
+      </mesh>
+      
+      {/* Earth System (Earth + Moon + Satellite) */}
+      <EarthSystem />
+      
+      {/* Other planets */}
+      <OrbitingBody distance={6} speed={0.4} color="#d4a574" size={0.3} name="🪨 Mercury" />
+      <OrbitRing radius={6} color="#d4a574" />
+      
+      <OrbitingBody distance={9} speed={0.3} color="#e6c87a" size={0.45} name="🌕 Venus" />
+      <OrbitRing radius={9} color="#e6c87a" />
+      
+      <OrbitingBody distance={18} speed={0.1} color="#c1440e" size={0.4} name="🔴 Mars" />
+      <OrbitRing radius={18} color="#c1440e" />
+      
+      {/* Camera controls */}
+      <OrbitControls 
+        enablePan={true} 
+        enableZoom={true} 
+        minDistance={5} 
+        maxDistance={80}
+        autoRotate
+        autoRotateSpeed={0.3}
+      />
+    </>
+  )
+}
+
+// Main component
+export default function SolarSystem() {
+  return (
+    <div className="w-full h-screen bg-black">
+      <Canvas camera={{ position: [0, 20, 30], fov: 60 }}>
+        <Scene />
+      </Canvas>
+      
+      {/* UI Overlay */}
+      <div className="absolute top-4 left-4 text-white">
+        <h1 className="text-2xl font-bold mb-2">🌌 Solar System Simulator</h1>
+        <p className="text-sm text-gray-300">Drag to rotate • Scroll to zoom</p>
+      </div>
+      
+      <div className="absolute bottom-4 left-4 text-white text-xs bg-black/50 p-3 rounded">
+        <p>☀️ Sun • 🌍 Earth • 🌙 Moon • 🛰️ Satellite</p>
+        <p className="text-gray-400 mt-1">Physics: Newton&apos;s Law of Gravitation</p>
+      </div>
+    </div>
+  )
+}
