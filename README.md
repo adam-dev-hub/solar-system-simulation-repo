@@ -130,21 +130,4 @@ That means the scene may not render fully offline unless those assets are moved 
 - The README name says "solar system", but the actual experience is currently an Earth-centered orbital demo.
 - There are no automated tests yet.
 
-## Main Files To Edit
 
-- [`src/components/SolarSystem.jsx`](./src/components/SolarSystem.jsx): simulation behavior, scene objects, camera logic, and overlay controls
-- [`src/app/page.js`](./src/app/page.js): app entry point
-- [`src/app/layout.js`](./src/app/layout.js): metadata and root layout
-- [`src/app/globals.css`](./src/app/globals.css): global styles
-
-## Possible Next Improvements
-
-- Add more planets and orbital data
-- Replace remote textures with local assets
-- Move overlay styles into dedicated CSS or component-level styling
-- Add labels, tooltips, or object selection
-- Add tests around UI state and rendering boundaries
-
-## License
-
-No license file is included in this repository yet. Add one before distributing or open-sourcing the project.
